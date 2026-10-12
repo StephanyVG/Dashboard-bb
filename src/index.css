@@ -1,0 +1,142 @@
+@import "tailwindcss";
+
+:root {
+  --bg-primary: #FFFFFF;
+  --bg-secondary: #F4F4F5;
+  --bg-tertiary: #E4E4E7;
+  --surface-base: #FFFFFF;
+  --surface-inverted: #000000;
+  --text-primary: #000000;
+  --text-secondary: #52525B;
+  --text-inverted: #FFFFFF;
+  --border-light: #E4E4E7;
+  --border-dark: #000000;
+}
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+  
+  html, body, #root {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  ::selection {
+    background-color: #000000;
+    color: #FFFFFF;
+  }
+}
+
+/* Clases de utilidad específicas del Sistema de Diseño Monocromático */
+
+/* Botones: Round corner de 6px según design.md */
+.btn-primary {
+  background-color: #000000;
+  color: #FFFFFF;
+  font-weight: 500;
+  border-radius: 6px;
+  transition: all 150ms ease-in-out;
+}
+.btn-primary:hover {
+  background-color: #27272A;
+}
+.btn-primary:disabled {
+  background-color: #E4E4E7;
+  color: #52525B;
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  background-color: transparent;
+  border: 1px solid #000000;
+  color: #000000;
+  font-weight: 500;
+  border-radius: 6px;
+  transition: all 150ms ease-in-out;
+}
+.btn-secondary:hover {
+  background-color: #F4F4F5;
+}
+.btn-secondary:disabled {
+  border-color: #E4E4E7;
+  color: #52525B;
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-ghost {
+  background-color: transparent;
+  border: none;
+  color: #000000;
+  font-weight: 500;
+  border-radius: 6px;
+  transition: all 150ms ease-in-out;
+}
+.btn-ghost:hover {
+  background-color: #E4E4E7;
+}
+
+/* Inputs, Textareas y controles: Round corner de 6px según design.md */
+.input-mono {
+  background-color: #FFFFFF;
+  border: 1px solid #E4E4E7;
+  color: #000000;
+  border-radius: 6px;
+  transition: border-color 150ms ease-in-out;
+}
+.input-mono::placeholder {
+  color: #52525B;
+}
+.input-mono:hover {
+  border-color: #A1A1AA;
+}
+.input-mono:focus {
+  outline: none;
+  border: 2px solid #000000;
+}
+.input-mono:disabled {
+  background-color: #E4E4E7;
+  color: #52525B;
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.input-mono-error {
+  border: 2px solid #000000;
+}
+
+/* Tarjetas: Round corner de 16px según design.md */
+.card-mono {
+  background-color: #FFFFFF;
+  border: 1px solid #E4E4E7;
+  border-radius: 16px;
+}
+
+/* Tablas según design.md */
+.table-mono {
+  width: 100%;
+  border-collapse: collapse;
+}
+.table-mono th {
+  background-color: #F4F4F5;
+  color: #52525B;
+  font-weight: 500;
+  border-bottom: 1px solid #000000;
+}
+.table-mono td {
+  background-color: #FFFFFF;
+  color: #000000;
+  border-bottom: 1px solid #E4E4E7;
+}
+.table-mono tr:hover td {
+  background-color: #F4F4F5;
+}
