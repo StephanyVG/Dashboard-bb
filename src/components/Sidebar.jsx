@@ -35,13 +35,14 @@ export default function Sidebar({
   onClose,
   currentUser,
   onLogout,
+  isHidden = false,
 }) {
   return (
     <>
-      {/* Backdrop overlay para pantallas móviles */}
+      {/* Backdrop overlay para pantallas móviles o cuando isOpen está activo */}
       {isOpen && (
         <div
-          className="fixed inset-0 bg-[#000000]/60 z-40 lg:hidden transition-opacity"
+          className="fixed inset-0 bg-[#000000]/60 z-40 transition-opacity"
           onClick={onClose}
           aria-hidden="true"
         />
@@ -49,8 +50,12 @@ export default function Sidebar({
 
       {/* Sidebar Container: Ancho fijo de 260px, fondo bg-secondary #F4F4F5, borde border-light #E4E4E7 */}
       <aside
-        className={`fixed top-0 bottom-0 left-0 z-50 w-[260px] bg-[#F4F4F5] border-r border-[#E4E4E7] flex flex-col transition-transform duration-200 ease-in-out lg:translate-x-0 lg:static lg:h-screen lg:shrink-0 ${
-          isOpen ? 'translate-x-0' : '-translate-x-full'
+        className={`fixed top-0 bottom-0 left-0 z-50 w-[260px] bg-[#F4F4F5] border-r border-[#E4E4E7] flex flex-col transition-all duration-300 ease-in-out lg:static lg:h-screen lg:shrink-0 ${
+          isHidden && !isOpen
+            ? '-translate-x-full lg:-ml-[260px] opacity-0 pointer-events-none'
+            : isOpen
+              ? 'translate-x-0'
+              : '-translate-x-full lg:translate-x-0 lg:ml-0 opacity-100'
         }`}
       >
         {/* Cabecera del Sidebar / Brand (h-16 / 64px) */}

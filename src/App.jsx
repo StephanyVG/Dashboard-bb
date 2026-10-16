@@ -11,7 +11,13 @@ import { authStorage } from './services/api';
 export default function App() {
   const [activeView, setActiveView] = useState('monitor');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isOrderSelected, setIsOrderSelected] = useState(false);
   const [toast, setToast] = useState(null);
+
+  const handleSelectView = (view) => {
+    setActiveView(view);
+    setIsOrderSelected(false);
+  };
 
   // Estado de autenticación JWT inicializado directamente desde almacenamiento local
   const [token, setToken] = useState(() => authStorage.getToken());
@@ -83,11 +89,12 @@ export default function App() {
       {/* Sidebar de navegación lateral (Ancho fijo de 260px) */}
       <Sidebar
         activeView={activeView}
-        onSelectView={setActiveView}
+        onSelectView={handleSelectView}
         isOpen={isSidebarOpen}
         onClose={() => setIsSidebarOpen(false)}
         currentUser={currentUser}
         onLogout={() => handleLogout('Sesión cerrada. Token JWT eliminado.')}
+        isHidden={isOrderSelected}
       />
 
       {/* Contenedor principal a la derecha */}
@@ -97,6 +104,7 @@ export default function App() {
           activeView={activeView}
           onOpenSidebar={() => setIsSidebarOpen(true)}
           onShowToast={showToast}
+          isSidebarHidden={isOrderSelected}
         />
 
         {/* Área de contenido de la vista activa: Ancho fluido adaptativo con exactamente 40px de padding */}
@@ -106,6 +114,7 @@ export default function App() {
               <MonitorView 
                 onShowToast={showToast} 
                 onRequireAuth={() => handleLogout('Tu sesión ha expirado (401). Inicia sesión nuevamente.')} 
+                onCardSelectChange={setIsOrderSelected}
               />
             )}
             {activeView === 'finanzas' && (

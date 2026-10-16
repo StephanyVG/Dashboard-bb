@@ -99,8 +99,9 @@ const CATEGORY_TABS = ['Todos', 'Cafetería', 'Alimentos', 'Postres'];
 export default function CatalogoView({ onShowToast, onRequireAuth }) {
   const [activeTab, setActiveTab] = useState('Todos');
   const [searchTerm, setSearchTerm] = useState('');
-  const [currentPage, setCurrentPage] = useState(1);
+  const [visibleCount, setVisibleCount] = useState(8);
   const [products, setProducts] = useState(DEFAULT_PRODUCTS);
+  const loadMoreRef = React.useRef(null);
 
   // Estado para el modal de nuevo producto con especificaciones
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -198,6 +199,29 @@ export default function CatalogoView({ onShowToast, onRequireAuth }) {
     return matchesCategory && matchesSearch;
   });
 
+  // Reiniciar cantidad visible al cambiar tab o búsqueda
+  useEffect(() => {
+    setVisibleCount(8);
+  }, [activeTab, searchTerm]);
+
+  // Cargar más productos progresivamente de acuerdo al scroll
+  useEffect(() => {
+    const target = loadMoreRef.current;
+    if (!target) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          setVisibleCount((prev) => Math.min(prev + 4, filteredProducts.length));
+        }
+      },
+      { threshold: 0.1, rootMargin: '120px' }
+    );
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [filteredProducts.length]);
+
+  const displayedProducts = filteredProducts.slice(0, visibleCount);
+
   return (
     <div className="space-y-6">
       {/* Header de la vista */}
@@ -274,7 +298,7 @@ export default function CatalogoView({ onShowToast, onRequireAuth }) {
             No se encontraron productos en la categoría <strong>{activeTab}</strong> {searchTerm ? `con el término "${searchTerm}"` : ''}.
           </div>
         ) : (
-          filteredProducts.map((item) => (
+          displayedProducts.map((item) => (
             <div
               key={item.id}
               className="p-5 bg-[#FFFFFF] border border-[#E4E4E7] hover:border-[#000000] transition-colors flex flex-col justify-between rounded-[16px]"
@@ -321,42 +345,22 @@ export default function CatalogoView({ onShowToast, onRequireAuth }) {
         )}
       </div>
 
-      {/* Paginación: Contenedor con 16px round corner, botones con 6px */}
-      <div className="p-4 bg-[#FFFFFF] border border-[#E4E4E7] rounded-[16px] flex items-center justify-between text-xs text-[#52525B]">
-        <span>Mostrando {filteredProducts.length} de {products.length} productos</span>
-        <div className="flex items-center gap-1.5">
-          <button 
-            type="button"
-            onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
-            disabled={currentPage === 1}
-            className="btn-secondary px-3 py-1.5 text-xs font-medium rounded-[6px] cursor-pointer disabled:opacity-50"
-          >
-            Anterior
-          </button>
-          {[1, 2, 3].map((page) => (
-            <button
-              key={page}
-              type="button"
-              onClick={() => setCurrentPage(page)}
-              className={`w-7 h-7 flex items-center justify-center text-xs font-medium rounded-[6px] transition-colors cursor-pointer ${
-                currentPage === page
-                  ? 'bg-[#000000] text-[#FFFFFF]'
-                  : 'bg-transparent text-[#000000] border border-[#E4E4E7] hover:bg-[#F4F4F5]'
-              }`}
-            >
-              {page}
-            </button>
-          ))}
-          <button 
-            type="button"
-            onClick={() => setCurrentPage(Math.min(3, currentPage + 1))}
-            disabled={currentPage === 3}
-            className="btn-secondary px-3 py-1.5 text-xs font-medium rounded-[6px] cursor-pointer disabled:opacity-50"
-          >
-            Siguiente
-          </button>
+      {/* Carga continua al hacer scroll (sin paginadores) */}
+      {visibleCount < filteredProducts.length && (
+        <div ref={loadMoreRef} className="py-8 flex items-center justify-center text-xs text-[#52525B]">
+          <div className="flex items-center gap-2 px-4 py-2 bg-[#FFFFFF] border border-[#E4E4E7] rounded-[6px]">
+            <span className="w-2 h-2 rounded-full bg-[#000000] animate-pulse"></span>
+            <span>Cargando más artículos de acuerdo al scroll...</span>
+          </div>
         </div>
-      </div>
+      )}
+
+      {/* Indicador de fin de listado de acuerdo al scroll */}
+      {filteredProducts.length > 0 && visibleCount >= filteredProducts.length && (
+        <div className="py-4 text-center text-xs text-[#52525B]">
+          Mostrando todos los {filteredProducts.length} productos
+        </div>
+      )}
 
       {/* Modal para Agregar Producto con Especificaciones */}
       {isModalOpen && (

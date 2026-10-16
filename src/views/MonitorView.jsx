@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Coffee, 
   Clock, 
@@ -6,7 +6,8 @@ import {
   Receipt, 
   Check, 
   Search, 
-  Inbox
+  Inbox,
+  X
 } from 'lucide-react';
 import { updatePedidoStatusAPI, getPedidosAPI } from '../services/api';
 
@@ -123,14 +124,17 @@ function StatusBadge({ status }) {
   );
 }
 
-export default function MonitorView({ onShowToast, onRequireAuth }) {
+export default function MonitorView({ onShowToast, onRequireAuth, onCardSelectChange }) {
   const [orders, setOrders] = useState(INITIAL_ORDERS);
-  const [selectedOrderId, setSelectedOrderId] = useState(INITIAL_ORDERS[0].id);
+  const [selectedOrderId, setSelectedOrderId] = useState(null);
+  const [isDetailSidebarOpen, setIsDetailSidebarOpen] = useState(false);
+  const [isSwitching, setIsSwitching] = useState(false);
+  const switchTimeoutRef = React.useRef(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('Todos');
 
   // Cargar pedidos desde la API protegida si hay token
-  React.useEffect(() => {
+  useEffect(() => {
     getPedidosAPI()
       .then((res) => {
         if (res.data) setOrders(res.data);
@@ -139,6 +143,95 @@ export default function MonitorView({ onShowToast, onRequireAuth }) {
         // Si no hay token o es 401, se conservan los datos locales
       });
   }, []);
+
+  // Limpiar temporizador y restaurar visibilidad de sidebar de navegación al desmontar
+  useEffect(() => {
+    return () => {
+      if (switchTimeoutRef.current) {
+        clearTimeout(switchTimeoutRef.current);
+      }
+      onCardSelectChange?.(false);
+    };
+  }, [onCardSelectChange]);
+
+  // Cerrar sidebar lateral con la tecla Escape
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        handleCloseSidebar();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  const handleSelectOrder = (orderId) => {
+    if (switchTimeoutRef.current) {
+      clearTimeout(switchTimeoutRef.current);
+    }
+
+    // Notificar para ocultar el sidepanel de secciones de la aplicación
+    onCardSelectChange?.(true);
+
+    // Si ya está abierto con la misma orden y no está en transición, no hacer nada
+    if (isDetailSidebarOpen && selectedOrderId === orderId && !isSwitching) {
+      return;
+    }
+
+    // Si ya hay un sidepanel abierto con otra orden:
+    // Cierra el anterior y luego abre el nuevo sidepanel
+    if (isDetailSidebarOpen && selectedOrderId && selectedOrderId !== orderId) {
+      setIsSwitching(true);
+      switchTimeoutRef.current = setTimeout(() => {
+        setSelectedOrderId(orderId);
+        setIsSwitching(false);
+        setIsDetailSidebarOpen(true);
+      }, 240);
+      return;
+    }
+
+    // Si estaba cerrado, abre directamente
+    setSelectedOrderId(orderId);
+    setIsSwitching(false);
+    setIsDetailSidebarOpen(true);
+  };
+
+  const handleCloseSidebar = () => {
+    if (switchTimeoutRef.current) {
+      clearTimeout(switchTimeoutRef.current);
+    }
+    setIsSwitching(false);
+    setIsDetailSidebarOpen(false);
+    // Notificar para volver a mostrar el sidepanel de secciones
+    onCardSelectChange?.(false);
+  };
+
+  // Manejar clics sobre el overlay: si se hace clic sobre otra card, seleccionarla cerrando la anterior y abriendo la nueva
+  const handleOverlayClick = (e) => {
+    const overlay = e.currentTarget;
+    overlay.style.pointerEvents = 'none';
+    const elementUnderneath = document.elementFromPoint(e.clientX, e.clientY);
+    overlay.style.pointerEvents = 'auto';
+
+    const orderCard = elementUnderneath?.closest('[data-order-id]');
+    if (orderCard) {
+      const orderId = orderCard.getAttribute('data-order-id');
+      if (orderId) {
+        handleSelectOrder(orderId);
+        return;
+      }
+    }
+
+    handleCloseSidebar();
+  };
+
+  // Permitir scroll fluido del contenedor principal mientras el cursor esté sobre el overlay
+  const handleOverlayWheel = (e) => {
+    const mainContainer = document.querySelector('main');
+    if (mainContainer) {
+      mainContainer.scrollTop += e.deltaY;
+    }
+  };
 
   const filteredOrders = orders.filter((order) => {
     const matchesSearch = 
@@ -149,11 +242,12 @@ export default function MonitorView({ onShowToast, onRequireAuth }) {
     return matchesSearch && order.status === statusFilter;
   });
 
-  const selectedOrder = orders.find((o) => o.id === selectedOrderId) || orders[0];
-  const selectedTotals = calculateOrderTotals(selectedOrder);
+  const selectedOrder = orders.find((o) => o.id === selectedOrderId) || null;
+  const selectedTotals = selectedOrder ? calculateOrderTotals(selectedOrder) : null;
   const totalDaySales = orders.reduce((sum, o) => sum + calculateOrderTotals(o).total, 0);
 
   const handleUpdateStatus = async () => {
+    if (!selectedOrder) return;
     const nextStatus = selectedOrder.status === 'Pedido recibido' ? 'Entregado' : 'Pedido recibido';
 
     try {
@@ -226,240 +320,290 @@ export default function MonitorView({ onShowToast, onRequireAuth }) {
         </div>
       </div>
 
-      {/* Contenido Principal: Listado adaptable y Detalle lateral de 420px */}
-      <div className="flex flex-col xl:flex-row gap-6 items-start">
-        {/* Contenedor de filtros y cards de pedidos: se adapta fluidamente a lo ancho */}
-        <div className="flex-1 min-w-0 w-full space-y-4">
-          {/* Barra de Filtros y Búsqueda adaptable */}
-          <div className="p-4 bg-[#FFFFFF] border border-[#E4E4E7] rounded-[16px] flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between">
-            <div className="relative flex-1">
-              <Search className="w-4 h-4 text-[#52525B] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-              <input
-                type="text"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Buscar por cliente o café..."
-                className="input-mono w-full pl-9 pr-3 py-2 text-xs sm:text-sm rounded-[6px]"
-              />
-            </div>
-
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
-              {['Todos', 'Pedido recibido', 'Entregado'].map((status) => (
-                <button
-                  key={status}
-                  type="button"
-                  onClick={() => setStatusFilter(status)}
-                  className={`px-3 py-1.5 text-xs font-medium transition-colors whitespace-nowrap rounded-[6px] cursor-pointer shrink-0 ${
-                    statusFilter === status
-                      ? 'bg-[#000000] text-[#FFFFFF]'
-                      : 'bg-transparent text-[#000000] border border-[#E4E4E7] hover:bg-[#F4F4F5]'
-                  }`}
-                >
-                  {status}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Tarjetas de Pedidos: 3 por línea en escritorio, 2 por línea en dispositivos más pequeños */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
-            {filteredOrders.length === 0 ? (
-              <div className="col-span-full p-8 bg-[#FFFFFF] border border-[#E4E4E7] rounded-[16px] text-center text-[#52525B] text-sm">
-                No se encontraron pedidos con los criterios especificados.
-              </div>
-            ) : (
-              filteredOrders.map((order) => {
-                const isSelected = order.id === selectedOrder.id;
-                const { total } = calculateOrderTotals(order);
-
-                return (
-                  <div
-                    key={order.id}
-                    onClick={() => setSelectedOrderId(order.id)}
-                    className={`p-3.5 sm:p-4 transition-all cursor-pointer text-left rounded-[16px] flex flex-col justify-between gap-3 ${
-                      isSelected
-                        ? 'bg-[#F4F4F5] border-2 border-[#000000] shadow-sm'
-                        : 'bg-[#FFFFFF] border border-[#E4E4E7] hover:border-[#000000]'
-                    }`}
-                  >
-                    {/* Fila superior: Badge de estado (arriba del nombre) y Fecha/Hora con reloj al lado izquierdo */}
-                    <div className="flex flex-wrap items-center justify-between gap-1.5">
-                      <StatusBadge status={order.status} />
-
-                      <div className="flex items-center gap-1.5 text-[11px] text-[#52525B] shrink-0 font-medium">
-                        <Clock className="w-3.5 h-3.5 text-[#52525B] shrink-0" />
-                        <span>{order.date}</span>
-                      </div>
-                    </div>
-
-                    {/* Fila media: Cliente (directamente debajo del badge) y Café */}
-                    <div className="space-y-1.5 min-w-0">
-                      <div className="flex items-center gap-1.5 text-xs sm:text-sm font-semibold text-[#000000]">
-                        <User className="w-3.5 h-3.5 text-[#52525B] shrink-0" />
-                        <h3 className="truncate">
-                          {order.customerName}
-                        </h3>
-                      </div>
-
-                      <div className="flex items-center gap-1.5 text-xs text-[#000000]">
-                        <Coffee className="w-3.5 h-3.5 text-[#000000] shrink-0" />
-                        <span className="font-medium text-[#000000] truncate">
-                          {order.item.name}
-                        </span>
-                      </div>
-
-                      {/* Agregados resumidos de forma compacta */}
-                      {order.addons.length > 0 && (
-                        <div 
-                          className="text-[11px] text-[#52525B] truncate pt-0.5" 
-                          title={order.addons.map((a) => a.name).join(', ')}
-                        >
-                          <span className="font-medium text-[#000000]">+{order.addons.length} extras: </span>
-                          <span className="italic">{order.addons.map((a) => a.name).join(', ')}</span>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Fila inferior: Total */}
-                    <div className="flex items-center justify-between pt-2.5 border-t border-[#E4E4E7] text-xs">
-                      <span className="text-[10px] text-[#52525B] uppercase font-semibold">Total</span>
-                      <span className="text-base font-bold text-[#000000] tracking-tight">
-                        ${total.toFixed(2)}
-                      </span>
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
+      {/* Barra de Filtros y Búsqueda adaptable */}
+      <div className="p-4 bg-[#FFFFFF] border border-[#E4E4E7] rounded-[16px] flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between">
+        <div className="relative flex-1">
+          <Search className="w-4 h-4 text-[#52525B] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+          <input
+            type="text"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder="Buscar por cliente o café..."
+            className="input-mono w-full pl-9 pr-3 py-2 text-xs sm:text-sm rounded-[6px]"
+          />
         </div>
 
-        {/* Columna Derecha: Detalle Completo del Pedido Seleccionado (Sidepanel de 420px de ancho) */}
-        <div className="w-full xl:w-[420px] shrink-0">
-          <div className="sticky top-0 bg-[#FFFFFF] border border-[#E4E4E7] p-6 rounded-[16px] max-h-[calc(100vh-100px)] overflow-y-auto shadow-sm">
-            {/* Header del Comprobante (Sin ID) */}
-            <div className="flex items-center justify-between border-b border-[#E4E4E7] pb-4">
-              <div>
-                <span className="text-[11px] uppercase font-bold tracking-wider text-[#52525B] block">
-                  Comprobante
-                </span>
-                <h2 className="text-base font-bold text-[#000000] flex items-center gap-2 mt-0.5">
-                  <Receipt className="w-5 h-5 text-[#000000]" />
-                  Detalle del Pedido
-                </h2>
-              </div>
-              <StatusBadge status={selectedOrder.status} />
-            </div>
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
+          {['Todos', 'Pedido recibido', 'Entregado'].map((status) => (
+            <button
+              key={status}
+              type="button"
+              onClick={() => setStatusFilter(status)}
+              className={`px-3 py-1.5 text-xs font-medium transition-colors whitespace-nowrap rounded-[6px] cursor-pointer shrink-0 ${
+                statusFilter === status
+                  ? 'bg-[#000000] text-[#FFFFFF]'
+                  : 'bg-transparent text-[#000000] border border-[#E4E4E7] hover:bg-[#F4F4F5]'
+              }`}
+            >
+              {status}
+            </button>
+          ))}
+        </div>
+      </div>
 
-            {/* Datos del Cliente y Fecha */}
-            <div className="py-4 border-b border-[#E4E4E7] space-y-2 text-xs">
-              <div className="flex items-center justify-between text-[#52525B]">
-                <span>Cliente:</span>
-                <span className="text-[#000000] font-semibold text-sm">
-                  {selectedOrder.customerName}
-                </span>
-              </div>
-              <div className="flex items-center justify-between text-[#52525B]">
-                <span>Fecha y Hora:</span>
-                <span className="text-[#000000] font-medium flex items-center gap-1">
-                  <Clock className="w-3.5 h-3.5 text-[#000000]" />
-                  {selectedOrder.date}
-                </span>
-              </div>
-            </div>
+      {/* Grid de Tarjetas de Pedidos a ancho completo (scroll fluido dentro del contenedor) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+        {filteredOrders.length === 0 ? (
+          <div className="col-span-full p-8 bg-[#FFFFFF] border border-[#E4E4E7] rounded-[16px] text-center text-[#52525B] text-sm">
+            No se encontraron pedidos con los criterios especificados.
+          </div>
+        ) : (
+          filteredOrders.map((order) => {
+            const isSelected = (isDetailSidebarOpen || isSwitching) && order.id === selectedOrderId;
+            const { total } = calculateOrderTotals(order);
 
-            {/* Desglose: Café y Agregados */}
-            <div className="py-4 border-b border-[#E4E4E7] space-y-3">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-[#52525B] block">
-                Detalle del Pedido
-              </span>
+            return (
+              <div
+                key={order.id}
+                data-order-id={order.id}
+                onClick={() => handleSelectOrder(order.id)}
+                className={`p-4 transition-all cursor-pointer text-left rounded-[16px] flex flex-col justify-between gap-3 ${
+                  isSelected
+                    ? 'bg-[#F4F4F5] border-2 border-[#000000] shadow-md ring-1 ring-[#000000]'
+                    : 'bg-[#FFFFFF] border border-[#E4E4E7] hover:border-[#000000] hover:shadow-sm'
+                }`}
+              >
+                {/* Fila superior: Badge de estado y Fecha/Hora */}
+                <div className="flex flex-wrap items-center justify-between gap-1.5">
+                  <StatusBadge status={order.status} />
 
-              {/* Bebida Base */}
-              <div className="flex items-start justify-between text-sm">
-                <div>
-                  <span className="font-semibold text-[#000000] block">
-                    {selectedOrder.item.name}
-                  </span>
-                  <span className="text-xs text-[#52525B]">Café base de especialidad</span>
+                  <div className="flex items-center gap-1.5 text-[11px] text-[#52525B] shrink-0 font-medium">
+                    <Clock className="w-3.5 h-3.5 text-[#52525B] shrink-0" />
+                    <span>{order.date}</span>
+                  </div>
                 </div>
-                <span className="font-semibold text-[#000000]">
-                  ${selectedOrder.item.basePrice.toFixed(2)}
-                </span>
-              </div>
 
-              {/* Lista de Agregados */}
-              {selectedOrder.addons.length > 0 && (
-                <div className="pl-3 border-l-2 border-[#000000] space-y-2 my-2">
-                  <span className="text-[11px] font-semibold text-[#000000] block">
-                    Agregados & Complementos:
-                  </span>
-                  {selectedOrder.addons.map((addon, index) => (
-                    <div key={index} className="flex items-center justify-between text-xs text-[#52525B]">
-                      <span>• {addon.name}</span>
-                      <span className="font-mono text-[#000000] font-medium">
-                        {addon.price > 0 ? `+$${addon.price.toFixed(2)}` : 'Incluido'}
-                      </span>
+                {/* Fila media: Cliente y Café */}
+                <div className="space-y-1.5 min-w-0">
+                  <div className="flex items-center gap-1.5 text-xs sm:text-sm font-semibold text-[#000000]">
+                    <User className="w-3.5 h-3.5 text-[#52525B] shrink-0" />
+                    <h3 className="truncate">
+                      {order.customerName}
+                    </h3>
+                  </div>
+
+                  <div className="flex items-center gap-1.5 text-xs text-[#000000]">
+                    <Coffee className="w-3.5 h-3.5 text-[#000000] shrink-0" />
+                    <span className="font-medium text-[#000000] truncate">
+                      {order.item.name}
+                    </span>
+                  </div>
+
+                  {/* Agregados resumidos */}
+                  {order.addons.length > 0 && (
+                    <div 
+                      className="text-[11px] text-[#52525B] truncate pt-0.5" 
+                      title={order.addons.map((a) => a.name).join(', ')}
+                    >
+                      <span className="font-medium text-[#000000]">+{order.addons.length} extras: </span>
+                      <span className="italic">{order.addons.map((a) => a.name).join(', ')}</span>
                     </div>
-                  ))}
+                  )}
                 </div>
-              )}
 
-              {/* Notas especiales del cliente: borde regular sin línea izquierda */}
-              {selectedOrder.notes && (
-                <div className="p-3 bg-[#F4F4F5] border border-[#E4E4E7] rounded-[6px] text-xs">
-                  <span className="font-semibold text-[#000000] block mb-0.5">
-                    Nota del cliente:
+                {/* Fila inferior: Total */}
+                <div className="flex items-center justify-between pt-2.5 border-t border-[#E4E4E7] text-xs">
+                  <span className="text-[10px] text-[#52525B] uppercase font-semibold">Total</span>
+                  <span className="text-base font-bold text-[#000000] tracking-tight">
+                    ${total.toFixed(2)}
                   </span>
-                  <p className="text-[#52525B] italic">"{selectedOrder.notes}"</p>
                 </div>
-              )}
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      {/* Overlay al 25% cuando se abre el sidepanel */}
+      {(isDetailSidebarOpen || isSwitching) && (
+        <div
+          onClick={handleOverlayClick}
+          onWheel={handleOverlayWheel}
+          aria-hidden="true"
+          className="fixed inset-0 bg-black/25 backdrop-blur-xs z-40 transition-opacity duration-200"
+        />
+      )}
+
+      {/* Panel lateral derecho desplegable (Drawer) */}
+      <aside
+        role="dialog"
+        aria-modal="false"
+        aria-label="Detalle del pedido seleccionado"
+        className={`fixed top-0 right-0 h-full w-full sm:w-[460px] md:w-[480px] bg-[#FFFFFF] border-l border-[#E4E4E7] shadow-2xl z-50 flex flex-col transform transition-transform duration-300 ease-in-out ${
+          isDetailSidebarOpen && !isSwitching && selectedOrder ? 'translate-x-0' : 'translate-x-full pointer-events-none'
+        }`}
+      >
+        {selectedOrder && selectedTotals && (
+          <>
+            {/* Header del Sidebar con botón de cerrar */}
+            <div className="h-16 px-6 border-b border-[#E4E4E7] flex items-center justify-between shrink-0 bg-[#FFFFFF]">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-[6px] bg-[#F4F4F5] border border-[#E4E4E7] flex items-center justify-center text-[#000000] shrink-0">
+                  <Receipt className="w-4 h-4" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-bold text-[#000000] leading-tight">
+                    Detalle del Pedido
+                  </h2>
+                  <span className="text-[11px] text-[#52525B] font-mono">
+                    {selectedOrder.id}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <StatusBadge status={selectedOrder.status} />
+                <button
+                  type="button"
+                  onClick={handleCloseSidebar}
+                  className="min-w-[36px] min-h-[36px] flex items-center justify-center text-[#52525B] hover:text-[#000000] hover:bg-[#F4F4F5] rounded-[6px] transition-colors cursor-pointer"
+                  aria-label="Cerrar detalle"
+                  title="Cerrar (Esc)"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
             </div>
 
-            {/* Resumen Financiero */}
-            <div className="py-4 space-y-2 text-xs">
-              <div className="flex justify-between text-[#52525B]">
-                <span>Café Base</span>
-                <span className="text-[#000000] font-mono">
-                  ${selectedOrder.item.basePrice.toFixed(2)}
-                </span>
-              </div>
-              <div className="flex justify-between text-[#52525B]">
-                <span>Agregados ({selectedOrder.addons.length})</span>
-                <span className="text-[#000000] font-mono">
-                  +${selectedTotals.addonsTotal.toFixed(2)}
-                </span>
+            {/* Contenido scrolleable interno del Sidebar con scroll suave */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-5">
+              {/* Datos del Cliente y Fecha */}
+              <div className="p-4 bg-[#F4F4F5] border border-[#E4E4E7] rounded-[10px] space-y-2.5 text-xs">
+                <div className="flex items-center justify-between">
+                  <span className="text-[#52525B] font-medium">Cliente:</span>
+                  <span className="text-[#000000] font-semibold text-sm flex items-center gap-1.5">
+                    <User className="w-3.5 h-3.5 text-[#52525B]" />
+                    {selectedOrder.customerName}
+                  </span>
+                </div>
+                {selectedOrder.customerPhone && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-[#52525B] font-medium">Teléfono:</span>
+                    <span className="text-[#000000] font-mono">
+                      {selectedOrder.customerPhone}
+                    </span>
+                  </div>
+                )}
+                <div className="flex items-center justify-between">
+                  <span className="text-[#52525B] font-medium">Fecha y Hora:</span>
+                  <span className="text-[#000000] font-medium flex items-center gap-1">
+                    <Clock className="w-3.5 h-3.5 text-[#52525B]" />
+                    {selectedOrder.date}
+                  </span>
+                </div>
               </div>
 
-              <div className="flex justify-between text-sm font-bold text-[#000000] pt-2 border-t border-[#E4E4E7]">
-                <span>Total del Pedido</span>
-                <span className="text-base text-[#000000]">
-                  ${selectedTotals.total.toFixed(2)}
+              {/* Desglose: Café y Agregados */}
+              <div className="space-y-3">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-[#52525B] block">
+                  Artículos del Pedido
                 </span>
+
+                {/* Bebida Base */}
+                <div className="p-3.5 bg-[#FFFFFF] border border-[#E4E4E7] rounded-[8px] flex items-start justify-between text-sm">
+                  <div className="flex items-start gap-2.5">
+                    <div className="w-7 h-7 mt-0.5 rounded-[4px] bg-[#F4F4F5] flex items-center justify-center text-[#000000] shrink-0">
+                      <Coffee className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <span className="font-semibold text-[#000000] block">
+                        {selectedOrder.item.name}
+                      </span>
+                      <span className="text-xs text-[#52525B]">Café base de especialidad</span>
+                    </div>
+                  </div>
+                  <span className="font-semibold text-[#000000] font-mono">
+                    ${selectedOrder.item.basePrice.toFixed(2)}
+                  </span>
+                </div>
+
+                {/* Lista de Agregados */}
+                {selectedOrder.addons.length > 0 && (
+                  <div className="pl-3 border-l-2 border-[#000000] space-y-2 my-2">
+                    <span className="text-[11px] font-semibold text-[#000000] block">
+                      Agregados & Complementos:
+                    </span>
+                    {selectedOrder.addons.map((addon, index) => (
+                      <div key={index} className="flex items-center justify-between text-xs text-[#52525B]">
+                        <span>• {addon.name}</span>
+                        <span className="font-mono text-[#000000] font-medium">
+                          {addon.price > 0 ? `+$${addon.price.toFixed(2)}` : 'Incluido'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Notas especiales del cliente */}
+                {selectedOrder.notes && (
+                  <div className="p-3.5 bg-[#F4F4F5] border border-[#E4E4E7] rounded-[8px] text-xs">
+                    <span className="font-semibold text-[#000000] block mb-1">
+                      Nota del cliente:
+                    </span>
+                    <p className="text-[#52525B] italic">"{selectedOrder.notes}"</p>
+                  </div>
+                )}
               </div>
 
-              {/* Comisión de Anticuario aplicada a este pedido */}
-              <div className="pt-2 border-t border-dashed border-[#E4E4E7] space-y-1.5">
+              {/* Resumen Financiero */}
+              <div className="p-4 bg-[#FFFFFF] border border-[#E4E4E7] rounded-[10px] space-y-2 text-xs">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-[#52525B] block mb-2">
+                  Resumen de Cuenta
+                </span>
                 <div className="flex justify-between text-[#52525B]">
-                  <span>Comisión Anticuario (5%)</span>
+                  <span>Café Base</span>
                   <span className="text-[#000000] font-mono">
-                    -${selectedTotals.comisionAnticuario.toFixed(2)}
+                    ${selectedOrder.item.basePrice.toFixed(2)}
                   </span>
                 </div>
-                <div className="flex justify-between font-semibold text-[#000000]">
-                  <span>Neto Cafetería</span>
-                  <span className="font-mono text-[#000000]">
-                    ${selectedTotals.netoCafeteria.toFixed(2)}
+                <div className="flex justify-between text-[#52525B]">
+                  <span>Agregados ({selectedOrder.addons.length})</span>
+                  <span className="text-[#000000] font-mono">
+                    +${selectedTotals.addonsTotal.toFixed(2)}
                   </span>
+                </div>
+
+                <div className="flex justify-between text-sm font-bold text-[#000000] pt-2 border-t border-[#E4E4E7]">
+                  <span>Total del Pedido</span>
+                  <span className="text-base text-[#000000] font-mono">
+                    ${selectedTotals.total.toFixed(2)}
+                  </span>
+                </div>
+
+                {/* Comisión de Anticuario aplicada a este pedido */}
+                <div className="pt-2 border-t border-dashed border-[#E4E4E7] space-y-1.5">
+                  <div className="flex justify-between text-[#52525B]">
+                    <span>Comisión Anticuario (5%)</span>
+                    <span className="text-[#000000] font-mono">
+                      -${selectedTotals.comisionAnticuario.toFixed(2)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between font-semibold text-[#000000]">
+                    <span>Neto Cafetería</span>
+                    <span className="font-mono text-[#000000]">
+                      ${selectedTotals.netoCafeteria.toFixed(2)}
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>
 
-            {/* Acción de la orden: Botón Primary con round corner de 6px */}
-            <div className="pt-2">
+            {/* Footer con Botón de Acción */}
+            <div className="p-5 border-t border-[#E4E4E7] bg-[#FFFFFF] shrink-0">
               <button
                 type="button"
                 onClick={handleUpdateStatus}
-                className="btn-primary w-full py-2.5 px-4 text-xs font-medium text-center flex items-center justify-center gap-2 rounded-[6px] cursor-pointer"
+                className="btn-primary w-full py-3 px-4 text-xs font-semibold text-center flex items-center justify-center gap-2 rounded-[6px] cursor-pointer shadow-sm hover:opacity-95"
               >
                 {selectedOrder.status === 'Pedido recibido' ? (
                   <>
@@ -474,9 +618,9 @@ export default function MonitorView({ onShowToast, onRequireAuth }) {
                 )}
               </button>
             </div>
-          </div>
-        </div>
-      </div>
+          </>
+        )}
+      </aside>
     </div>
   );
 }
